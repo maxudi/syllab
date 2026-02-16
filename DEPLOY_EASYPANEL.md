@@ -31,10 +31,17 @@ O Easypanel vai detectar o `Dockerfile` automaticamente!
 
 ## 🔐 Passo 3: Variáveis de Ambiente
 
-No Easypanel, adicione estas variáveis:
+⚠️ **IMPORTANTE**: No Easypanel, adicione estas variáveis em **DUAS SEÇÕES**:
 
+### 3.1 Build Arguments (Build Args)
 ```env
-# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://SEU_PROJETO.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_anon_key_aqui
+```
+
+### 3.2 Environment Variables (Variáveis de Ambiente)
+```env
+# Supabase (repetir aqui também)
 NEXT_PUBLIC_SUPABASE_URL=https://SEU_PROJETO.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_anon_key_aqui
 
@@ -49,6 +56,10 @@ NEXT_TELEMETRY_DISABLED=1
 1. Dashboard Supabase → Settings → API
 2. **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
 3. **anon/public** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### ❓ Por que em dois lugares?
+- **Build Args**: Next.js precisa dessas variáveis durante o build para embuti-las no código JavaScript
+- **Environment Variables**: Para runtime e outras operações server-side
 
 ---
 
@@ -239,22 +250,73 @@ Disponível nos planos superiores do Easypanel
 
 ---
 
-## 🆘 Suporte
+## 🆘 Troubleshooting
 
-**Erro no deploy?**
-1. Verifique logs no Easypanel
-2. Teste localmente com Docker:
-   ```bash
-   docker build -t syllab .
-   docker run -p 3000:3000 syllab
+### ❌ Problema: Build falha ou fica em loop
+
+**Causa**: Variáveis de ambiente `NEXT_PUBLIC_*` não configuradas nos **Build Arguments**
+
+**Solução**:
+1. No Easypanel, vá em **Settings** → **Build**
+2. Adicione em **Build Arguments**:
    ```
-3. Verifique variáveis de ambiente
+   NEXT_PUBLIC_SUPABASE_URL=https://SEU_PROJETO.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_anon_key_aqui
+   ```
+3. Clique em **Save** e faça **Redeploy**
+
+### ❌ Problema: Container inicia mas aplicação não carrega
+
+**Causa**: Variáveis de ambiente não configuradas nas **Environment Variables**
+
+**Solução**:
+1. No Easypanel, vá em **Settings** → **Environment**
+2. Adicione todas as variáveis listadas no Passo 3.2
+3. Faça **Redeploy**
+
+### ❌ Problema: Erro 500 ou conexão com Supabase falha
+
+**Causa**: URLs ou chaves incorretas
+
+**Solução**:
+1. Verifique no Supabase Dashboard → Settings → API
+2. Copie exatamente:
+   - **URL**: Deve terminar com `.supabase.co`
+   - **Key**: A chave **anon/public** (não a service_role!)
+3. Cole no Easypanel (em ambos os lugares!)
+
+### 🧪 Testar localmente antes do deploy
+
+```bash
+# Windows PowerShell
+$env:NEXT_PUBLIC_SUPABASE_URL="https://SEU_PROJETO.supabase.co"
+$env:NEXT_PUBLIC_SUPABASE_ANON_KEY="sua_chave"
+docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=$env:NEXT_PUBLIC_SUPABASE_URL --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=$env:NEXT_PUBLIC_SUPABASE_ANON_KEY -t syllab .
+docker run -p 3000:3000 -e NEXT_PUBLIC_SUPABASE_URL=$env:NEXT_PUBLIC_SUPABASE_URL -e NEXT_PUBLIC_SUPABASE_ANON_KEY=$env:NEXT_PUBLIC_SUPABASE_ANON_KEY syllab
+```
+
+Depois acesse: http://localhost:3000
+
+### 📋 Checklist se der erro:
+- [ ] Build Arguments configurados no Easypanel
+- [ ] Environment Variables configuradas no Easypanel
+- [ ] URLs do Supabase estão corretas (com https://)
+- [ ] Chaves do Supabase estão corretas (anon key, não service_role)
+- [ ] Porta 3000 configurada no Easypanel
+- [ ] Dockerfile está na raiz do repositório
+- [ ] Branch correto selecionado (main)
 
 ---
 
 ## ✨ Pronto!
 
 Seu sistema Syllab está pronto para produção! 🚀
+
+**Próximos passos após deploy bem-sucedido**:
+1. Configure domínio customizado (opcional)
+2. Configure SSL (automático no Easypanel)
+3. Execute scripts SQL iniciais no Supabase
+4. Crie primeiro usuário admin
 
 **Próximos passos após deploy**:
 1. Criar primeiro usuário admin
