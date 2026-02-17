@@ -27,6 +27,7 @@ type Conteudo = {
   arquivo_url: string | null
   ativo: boolean
   created_at: string
+  tem_slides?: boolean
 }
 
 type Disciplina = {
