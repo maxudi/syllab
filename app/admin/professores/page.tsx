@@ -7,7 +7,15 @@ import { requireAdmin } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Plus, Edit, Power, Search, Users, ArrowLeft } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Plus, Edit, Power, Search, Users, ArrowLeft, CheckCircle, Clock } from 'lucide-react'
 
 type Professor = {
   id: string
@@ -17,6 +25,7 @@ type Professor = {
   foto_url?: string
   token_ia?: string
   ativo: boolean
+  status: 'approved' | 'pending' | string // Mantido como 'status' para bater com o banco
   total_instituicoes: number
   instituicoes?: string
   total_disciplinas: number
@@ -29,6 +38,10 @@ export default function AdminProfessoresPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filteredProfessores, setFilteredProfessores] = useState<Professor[]>([])
+  
+  // Estados para o Modal de Aprovação
+  const [selectedProfessor, setSelectedProfessor] = useState<Professor | null>(null)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
 
   useEffect(() => {
     checkAuth()
@@ -72,6 +85,33 @@ export default function AdminProfessoresPage() {
     }
   }, [searchTerm, professores])
 
+  // Função para Alterar Aprovação (approved/pending)
+  async function handleToggleApproval() {
+    if (!selectedProfessor) return
+    
+    setIsUpdatingStatus(true)
+    const newStatus = selectedProfessor.status === 'approved' ? 'pending' : 'approved'
+
+    try {
+      const { error } = await supabase
+        .from('syllab_professores')
+        .update({ status: newStatus }) // Atualiza a coluna 'status'
+        .eq('id', selectedProfessor.id)
+
+      if (error) throw error
+
+      alert(`Status atualizado para ${newStatus === 'approved' ? 'Aprovado' : 'Pendente'}`)
+      setSelectedProfessor(null)
+      loadProfessores()
+    } catch (error) {
+      console.error('Erro ao atualizar aprovação:', error)
+      alert('Erro ao atualizar status de aprovação')
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  // Função para Ativar/Desativar Conta (ativo: boolean)
   async function toggleProfessorAtivo(professorId: string, currentStatus: boolean) {
     const confirmMsg = currentStatus 
       ? 'Deseja desativar este professor?' 
@@ -87,7 +127,7 @@ export default function AdminProfessoresPage() {
 
       if (error) throw error
 
-      alert('Status atualizado com sucesso!')
+      alert('Status da conta atualizado!')
       loadProfessores()
     } catch (error) {
       console.error('Erro ao alterar status:', error)
@@ -109,7 +149,6 @@ export default function AdminProfessoresPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Botão Voltar */}
         <Button
           variant="ghost"
           onClick={() => router.push('/professor')}
@@ -119,195 +158,186 @@ export default function AdminProfessoresPage() {
           Voltar ao Dashboard
         </Button>
 
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <Users className="w-8 h-8" />
-                Gerenciar Professores
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Administração de professores, vínculos e tokens de IA
-              </p>
-            </div>
-            <Button
-              onClick={() => router.push('/admin/professores/novo')}
-              className="flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Novo Professor
-            </Button>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-8 h-8" />
+              Gerenciar Professores
+            </h1>
+            <p className="text-gray-600 mt-2">Administração de acesso, vínculos e aprovações</p>
           </div>
+          <Button onClick={() => router.push('/admin/professores/novo')} className="gap-2">
+            <Plus className="w-4 h-4" /> Novo Professor
+          </Button>
         </div>
 
-        {/* Estatísticas */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-gray-600">Total de Professores</p>
-                  <p className="text-3xl font-bold text-blue-600">{professores.length}</p>
-                </div>
-                <Users className="w-12 h-12 text-blue-600 opacity-20" />
+            <CardContent className="pt-6 flex justify-between items-center">
+              <div>
+                <p className="text-sm text-gray-600">Total</p>
+                <p className="text-3xl font-bold text-blue-600">{professores.length}</p>
               </div>
+              <Users className="w-10 h-10 text-blue-600 opacity-20" />
             </CardContent>
           </Card>
-
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-gray-600">Professores Ativos</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {professores.filter(p => p.ativo).length}
-                  </p>
-                </div>
-                <Power className="w-12 h-12 text-green-600 opacity-20" />
+            <CardContent className="pt-6 flex justify-between items-center">
+              <div>
+                <p className="text-sm text-gray-600">Pendentes</p>
+                <p className="text-3xl font-bold text-yellow-600">
+                  {professores.filter(p => p.status === 'pending').length}
+                </p>
               </div>
+              <Clock className="w-10 h-10 text-yellow-600 opacity-20" />
             </CardContent>
           </Card>
-
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-gray-600">Com Token IA</p>
-                  <p className="text-3xl font-bold text-purple-600">
-                    {professores.filter(p => p.token_ia).length}
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-purple-600 opacity-20 rounded flex items-center justify-center text-white font-bold text-xl">
-                  AI
-                </div>
+            <CardContent className="pt-6 flex justify-between items-center">
+              <div>
+                <p className="text-sm text-gray-600">Ativos</p>
+                <p className="text-3xl font-bold text-green-600">
+                  {professores.filter(p => p.ativo).length}
+                </p>
               </div>
+              <Power className="w-10 h-10 text-green-600 opacity-20" />
             </CardContent>
           </Card>
         </div>
 
-        {/* Barra de Busca */}
         <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                type="text"
-                placeholder="Buscar por nome ou email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+          <CardContent className="pt-6 relative">
+            <Search className="absolute left-9 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Input
+              placeholder="Buscar por nome ou email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-12"
+            />
           </CardContent>
         </Card>
 
-        {/* Lista de Professores */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              Professores ({filteredProfessores.length})
-            </CardTitle>
+            <CardTitle>Listagem de Professores ({filteredProfessores.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-3">Foto</th>
-                    <th className="text-left p-3">Nome</th>
-                    <th className="text-left p-3">Email</th>
+                  <tr className="border-b text-sm text-gray-500">
+                    <th className="text-left p-3">Info</th>
                     <th className="text-left p-3">Instituições</th>
                     <th className="text-left p-3">Disciplinas</th>
                     <th className="text-left p-3">Token IA</th>
-                    <th className="text-left p-3">Status</th>
+                    <th className="text-left p-3">Aprovação</th>
+                    <th className="text-left p-3">Conta</th>
                     <th className="text-left p-3">Ações</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredProfessores.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center p-8 text-gray-500">
-                        Nenhum professor encontrado
+                <tbody className="text-sm">
+                  {filteredProfessores.map((prof) => (
+                    <tr key={prof.id} className="border-b hover:bg-gray-50 transition-colors">
+                      <td className="p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-600 overflow-hidden">
+                            {prof.foto_url ? <img src={prof.foto_url} alt={prof.nome} className="object-cover w-full h-full" /> : prof.nome.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{prof.nome}</p>
+                            <p className="text-xs text-gray-500">{prof.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+                          {prof.total_instituicoes} inst.
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span className="px-2 py-1 bg-green-50 text-green-700 rounded-md text-xs">
+                          {prof.total_disciplinas} disc.
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {prof.token_ia ? 
+                          <span className="text-purple-600 flex items-center gap-1 text-xs"><CheckCircle className="w-3 h-3"/> OK</span> : 
+                          <span className="text-gray-400 text-xs italic">Pendente</span>
+                        }
+                      </td>
+                      <td className="p-3">
+                        <button 
+                          onClick={() => setSelectedProfessor(prof)}
+                          className="hover:scale-105 transition-transform"
+                        >
+                          {/* Corrigido para verificar 'status' vindo do banco */}
+                          {prof.status === 'approved' ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">Aprovado</span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">Pendente</span>
+                          )}
+                        </button>
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2 py-1 rounded-full text-xs ${prof.ativo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {prof.ativo ? 'Ativo' : 'Inativo'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => router.push(`/admin/professores/${prof.id}`)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant={prof.ativo ? 'outline' : 'default'}
+                            className={prof.ativo ? 'text-red-600 border-red-200 hover:bg-red-50' : ''}
+                            onClick={() => toggleProfessorAtivo(prof.id, prof.ativo)}
+                          >
+                            <Power className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
-                  ) : (
-                    filteredProfessores.map((prof) => (
-                      <tr key={prof.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
-                          {prof.foto_url ? (
-                            <img
-                              src={prof.foto_url}
-                              alt={prof.nome}
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-semibold">
-                              {prof.nome.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-3 font-medium">{prof.nome}</td>
-                        <td className="p-3 text-sm text-gray-600">{prof.email}</td>
-                        <td className="p-3">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                            {prof.total_instituicoes} {prof.total_instituicoes === 1 ? 'instituição' : 'instituições'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                            {prof.total_disciplinas} {prof.total_disciplinas === 1 ? 'disciplina' : 'disciplinas'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {prof.token_ia ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                              Configurado
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs">Não configurado</span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {prof.ativo ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                              Ativo
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
-                              Inativo
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => router.push(`/admin/professores/${prof.id}`)}
-                              title="Editar"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={prof.ativo ? 'outline' : 'default'}
-                              onClick={() => toggleProfessorAtivo(prof.id, prof.ativo)}
-                              title={prof.ativo ? 'Desativar' : 'Ativar'}
-                              className={prof.ativo ? 'border-red-300 text-red-600 hover:bg-red-50' : ''}
-                            >
-                              <Power className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={!!selectedProfessor} onOpenChange={() => setSelectedProfessor(null)}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Alterar Aprovação</DialogTitle>
+              <DialogDescription>
+                Você está prestes a alterar o status de aprovação de <strong>{selectedProfessor?.nome}</strong>.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center py-6 gap-3">
+              <p className="text-sm text-gray-500">Status Atual:</p>
+              {selectedProfessor?.status === 'approved' ? (
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full font-bold text-sm uppercase">
+                  <CheckCircle className="w-4 h-4" /> Aprovado
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-full font-bold text-sm uppercase">
+                  <Clock className="w-4 h-4" /> Pendente
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setSelectedProfessor(null)}>Cancelar</Button>
+              <Button 
+                variant={selectedProfessor?.status === 'approved' ? "destructive" : "default"}
+                onClick={handleToggleApproval}
+                disabled={isUpdatingStatus}
+              >
+                {isUpdatingStatus ? "Salvando..." : `Mudar para ${selectedProfessor?.status === 'approved' ? 'Pendente' : 'Aprovado'}`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

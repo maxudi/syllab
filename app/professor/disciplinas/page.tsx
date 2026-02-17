@@ -45,6 +45,11 @@ export default function DisciplinasPage() {
     init()
   }, [])
 
+  function isApproved(p: any | null) {
+    const status = (p as any)?.status
+    return !status || status === 'approved'
+  }
+
   async function init() {
     await loadProfessor()
   }
@@ -56,43 +61,21 @@ export default function DisciplinasPage() {
       return
     }
 
-    // Buscar ou criar professor
+    // Buscar professor (NÃO criar automaticamente)
     const { data: professorData, error: profError } = await supabase
       .from('syllab_professores')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (profError) {
-      if (profError.code === 'PGRST116') {
-        // Professor não existe, criar
-        console.log('Criando registro de professor para:', user.email)
-        const { data: newProf, error: createError } = await supabase
-          .from('syllab_professores')
-          .insert([{
-            nome: user.nome || user.email,
-            email: user.email,
-            user_id: user.id
-          }])
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Erro ao criar professor:', createError)
-          showAlert('Erro', 'Erro ao criar perfil de professor. Verifique as permissões.', 'error')
-          return
-        }
-        setProfessor(newProf)
-        loadDisciplinas(newProf.id)
-        loadInstituicoes(newProf.id)
-      } else {
-        console.error('Erro ao buscar professor:', profError)
-      }
-    } else {
-      setProfessor(professorData)
-      loadDisciplinas(professorData.id)
-      loadInstituicoes(professorData.id)
+    if (profError || !professorData || !isApproved(professorData)) {
+      router.push('/professor')
+      return
     }
+
+    setProfessor(professorData)
+    loadDisciplinas(professorData.id)
+    loadInstituicoes(professorData.id)
   }
 
   async function loadDisciplinas(professorId: string) {

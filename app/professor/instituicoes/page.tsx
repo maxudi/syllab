@@ -41,8 +41,14 @@ export default function InstituicoesPage() {
     init()
   }, [])
 
+  function isApproved(p: any | null) {
+    const status = (p as any)?.status
+    return !status || status === 'approved'
+  }
+
   async function init() {
-    await loadProfessor()
+    const ok = await loadProfessor()
+    if (!ok) return
     await loadTodasInstituicoes()
   }
 
@@ -65,44 +71,30 @@ export default function InstituicoesPage() {
     const user = await getCurrentUser()
     if (!user) {
       router.push('/auth/login')
-      return
+      return false
     }
 
-    // Buscar ou criar professor
+    // Buscar professor (NÃO criar automaticamente)
     const { data: professorData, error: profError } = await supabase
       .from('syllab_professores')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (profError) {
-      if (profError.code === 'PGRST116') {
-        // Professor não existe, criar
-        console.log('Criando registro de professor para:', user.email)
-        const { data: newProf, error: createError } = await supabase
-          .from('syllab_professores')
-          .insert([{
-            nome: user.nome || user.email,
-            email: user.email,
-            user_id: user.id
-          }])
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Erro ao criar professor:', createError)
-          showAlert('Erro', 'Erro ao criar perfil de professor. Verifique as permissões.', 'error')
-          return
-        }
-        setProfessor(newProf)
-        loadInstituicoes(newProf.id)
-      } else {
-        console.error('Erro ao buscar professor:', profError)
-      }
-    } else {
-      setProfessor(professorData)
-      loadInstituicoes(professorData.id)
+    if (profError || !professorData) {
+      // Sem perfil aprovado, redireciona para /professor
+      router.push('/professor')
+      return false
     }
+
+    if (!isApproved(professorData)) {
+      router.push('/professor')
+      return false
+    }
+
+    setProfessor(professorData)
+    loadInstituicoes(professorData.id)
+    return true
   }
 
   async function loadInstituicoes(professorId: string) {

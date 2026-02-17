@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { supabase, type Disciplina, type Conteudo, type Professor } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
-import { Plus, Trash2, Edit, Save, X, BookOpen, Building2, Presentation } from 'lucide-react'
+import { Plus, Trash2, Edit, Save, X, BookOpen, Building2, Presentation, Clock, RefreshCw, ShieldAlert } from 'lucide-react'
 import Link from 'next/link'
 import { useAlert, useConfirm } from '@/components/alert-dialog'
 import UrlOuUpload from '@/components/url-ou-upload'
@@ -30,6 +30,7 @@ export default function ProfessorPage() {
   const [loading, setLoading] = useState(true)
   const [temInstituicoes, setTemInstituicoes] = useState<boolean>(false)
   const [verificandoInstituicoes, setVerificandoInstituicoes] = useState<boolean>(true)
+  const [hasProfessorRecord, setHasProfessorRecord] = useState<boolean>(true) // assume que tem até checar
   
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -52,6 +53,12 @@ export default function ProfessorPage() {
     }
   }, [selectedDisciplina])
 
+  function isApproved(p: any | null) {
+    // Compatibilidade retro: se não existir coluna status, considere aprovado
+    const status = (p as any)?.status
+    return !status || status === 'approved'
+  }
+
   async function initProfessor() {
     setLoading(true)
     const user = await getCurrentUser()
@@ -62,46 +69,89 @@ export default function ProfessorPage() {
 
     console.log('Usuário logado:', user)
 
-    // Buscar professor pelo user_id
+    // Buscar professor pelo user_id (não cria automaticamente)
     const { data: professorData, error: profError } = await supabase
       .from('syllab_professores')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (profError) {
-      if (profError.code === 'PGRST116') {
-        // Professor não existe, criar
-        console.log('Criando registro de professor...')
-        const { data: newProf, error: createError } = await supabase
-          .from('syllab_professores')
-          .insert([{
-            nome: user.nome || user.email,
-            email: user.email,
-            user_id: user.id
-          }])
-          .select()
-          .single()
+      console.error('Erro ao buscar professor:', profError)
+      // Em caso de erro inesperado, considere que não há registro para exibir UX de solicitação
+      setProfessor(null)
+      setHasProfessorRecord(false)
+      setVerificandoInstituicoes(false)
+      setLoading(false)
+      return
+    }
 
-        if (createError) {
-          console.error('Erro ao criar professor:', createError)
-          showAlert('Erro ao Criar Perfil', 'Não foi possível criar o perfil de professor. Verifique as permissões no banco de dados.', 'error')
-          return
-        }
-        console.log('Professor criado:', newProf)
-        setProfessor(newProf)
-        await verificarInstituicoes(newProf.id)
-        loadDisciplinas(newProf.id)
-      } else {
-        console.error('Erro ao buscar professor:', profError)
-      }
+    if (!professorData) {
+      // Não há registro -> mostrar card de Solicitar Acesso
+      setProfessor(null)
+      setHasProfessorRecord(false)
+      setVerificandoInstituicoes(false)
+      setLoading(false)
+      return
+    }
+
+    console.log('Professor encontrado:', professorData)
+    setProfessor(professorData as any)
+    setHasProfessorRecord(true)
+
+    if (isApproved(professorData)) {
+      await verificarInstituicoes((professorData as any).id)
+      await loadDisciplinas((professorData as any).id)
     } else {
-      console.log('Professor encontrado:', professorData)
-      setProfessor(professorData)
-      await verificarInstituicoes(professorData.id)
-      await loadDisciplinas(professorData.id)
+      // Pendente/Rejeitado: não carrega recursos da área do professor
+      setVerificandoInstituicoes(false)
     }
     setLoading(false)
+  }
+
+  async function solicitarAcesso() {
+    const user = await getCurrentUser()
+    if (!user) {
+      router.push('/auth/login')
+      return
+    }
+
+    // Evitar duplicação de solicitação
+    const { data: exists, error: existsErr } = await supabase
+      .from('syllab_professores')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!existsErr && exists) {
+      setProfessor(exists as any)
+      setHasProfessorRecord(true)
+      showAlert('Solicitação já existe', 'Você já possui uma solicitação ou um perfil de professor.', 'info')
+      return
+    }
+
+    const { data: newProf, error: createError } = await supabase
+      .from('syllab_professores')
+      .insert([{
+        nome: (user as any).nome || user.email,
+        email: user.email,
+        user_id: user.id,
+        ativo: true,
+        status: 'pending'
+      }])
+      .select()
+      .single()
+
+    if (createError) {
+      console.error('Erro ao solicitar acesso:', createError)
+      showAlert('Erro', 'Não foi possível enviar sua solicitação. Verifique as permissões no banco de dados.', 'error')
+      return
+    }
+
+    setProfessor(newProf as any)
+    setHasProfessorRecord(true)
+    setVerificandoInstituicoes(false)
+    showAlert('Solicitação Enviada', 'Sua solicitação para acesso de professor foi registrada e aguarda aprovação de um administrador.', 'success')
   }
 
   async function verificarInstituicoes(professorId: string) {
@@ -284,6 +334,72 @@ export default function ProfessorPage() {
     }
   }
 
+  // UI de bloqueio/acesso:
+  function renderAccessGuard() {
+    if (loading) return null
+
+    // Sem registro -> Solicitar Acesso
+    if (!hasProfessorRecord) {
+      return (
+        <Card className="mb-8 border-amber-300 bg-amber-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-900">
+              <ShieldAlert className="w-5 h-5" />
+              Acesso de Professor Necessário
+            </CardTitle>
+            <CardDescription>
+              Para acessar a área do professor, é necessário solicitar aprovação de um administrador.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button onClick={solicitarAcesso} className="gap-2">
+                Solicitar Acesso
+              </Button>
+              <Button variant="outline" onClick={initProfessor} className="gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Atualizar Status
+              </Button>
+            </div>
+            <p className="text-xs text-amber-800 mt-3">
+              Após o envio, sua solicitação ficará com status "Pendente" até a aprovação.
+            </p>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    // Com registro mas não aprovado
+    if (professor && !isApproved(professor as any)) {
+      const status = (professor as any)?.status
+      return (
+        <Card className="mb-8 border-yellow-300 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-yellow-900">
+              <Clock className="w-5 h-5" />
+              {status === 'rejected' ? 'Solicitação Rejeitada' : 'Solicitação Pendente'}
+            </CardTitle>
+            <CardDescription>
+              {status === 'rejected'
+                ? 'Sua solicitação foi rejeitada. Entre em contato com o administrador para mais informações.'
+                : 'Sua solicitação está em análise por um administrador.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={initProfessor} className="gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Atualizar Status
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    return null
+  }
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-slate-50">
@@ -296,34 +412,41 @@ export default function ProfessorPage() {
             <p className="text-slate-600">Gerencie o conteúdo das suas disciplinas</p>
           </div>
           <div className="flex space-x-2">
-            <Link href="/professor/instituicoes">
-              <Button variant="outline">
-                <Building2 className="w-4 h-4 mr-2" />
-                Instituições
-              </Button>
-            </Link>
-            <Link href="/professor/disciplinas">
-              <Button variant="outline">
-                <BookOpen className="w-4 h-4 mr-2" />
-                Minhas Disciplinas
-              </Button>
-            </Link>
+            {professor && isApproved(professor as any) ? (
+              <>
+                <Link href="/professor/instituicoes">
+                  <Button variant="outline">
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Instituições
+                  </Button>
+                </Link>
+                <Link href="/professor/disciplinas">
+                  <Button variant="outline">
+                    <BookOpen className="w-4 h-4 mr-2" />
+                    Minhas Disciplinas
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" disabled title="Disponível após aprovação">
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Instituições
+                </Button>
+                <Button variant="outline" disabled title="Disponível após aprovação">
+                  <BookOpen className="w-4 h-4 mr-2" />
+                  Minhas Disciplinas
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Loading State */}
-        {loading ? (
-          <div className="space-y-6">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="animate-pulse space-y-4">
-                  <div className="h-4 bg-slate-200 rounded w-3/4"></div>
-                  <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
+        {/* Guard de acesso: Solicitar/Pendente/Rejeitado */}
+        {renderAccessGuard()}
+
+        {/* Se ainda carregando ou acesso não aprovado, parar aqui */}
+        {loading || !professor || !isApproved(professor as any) ? null : (
           <>
             {/* Aviso se não houver instituições vinculadas */}
             {!verificandoInstituicoes && !temInstituicoes && (
