@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
 import { Plus, Trash2, Building2, Link as LinkIcon, Building, ArrowLeft, X } from 'lucide-react'
 import Link from 'next/link'
+import { useAlert, useConfirm } from '@/components/alert-dialog'
 
 interface Professor {
   id: string
@@ -38,6 +39,8 @@ interface Vinculo {
 }
 
 export default function MeusVinculosPage() {
+  const { showAlert, AlertComponent } = useAlert()
+  const { showConfirm, ConfirmComponent } = useConfirm()
   const router = useRouter()
   const [professor, setProfessor] = useState<Professor | null>(null)
   const [vinculos, setVinculos] = useState<Vinculo[]>([])
@@ -83,7 +86,7 @@ export default function MeusVinculosPage() {
 
         if (createError) {
           console.error('Erro ao criar professor:', createError)
-          alert('Erro ao criar perfil de professor')
+          showAlert('Erro ao Criar Perfil', 'Não foi possível criar o perfil de professor.', 'error')
           return
         }
         setProfessor(newProf)
@@ -146,12 +149,12 @@ export default function MeusVinculosPage() {
     e.preventDefault()
 
     if (!professor) {
-      alert('Erro: Professor não identificado')
+      showAlert('Erro', 'Professor não identificado. Tente fazer login novamente.', 'error')
       return
     }
 
     if (!formData.instituicao_id) {
-      alert('Selecione uma instituição')
+      showAlert('Instituição Não Selecionada', 'Por favor, selecione uma instituição.', 'warning')
       return
     }
 
@@ -167,7 +170,7 @@ export default function MeusVinculosPage() {
 
     if (vinculoExistente) {
       if (vinculoExistente.ativo) {
-        alert('Você já está vinculado a esta instituição')
+        showAlert('Vínculo Existente', 'Você já está vinculado a esta instituição.', 'info')
         setLoading(false)
         return
       } else {
@@ -179,9 +182,9 @@ export default function MeusVinculosPage() {
 
         if (error) {
           console.error('Erro ao reativar vínculo:', error)
-          alert(`Erro: ${error.message}`)
+          showAlert('Erro', `Não foi possível reativar o vínculo: ${error.message}`, 'error')
         } else {
-          alert('Vínculo reativado com sucesso!')
+          showAlert('Sucesso!', 'Vínculo reativado com sucesso!', 'success')
           resetForm()
           loadVinculos(professor.id)
         }
@@ -202,9 +205,9 @@ export default function MeusVinculosPage() {
 
     if (error) {
       console.error('Erro ao criar vínculo:', error)
-      alert(`Erro ao criar vínculo: ${error.message}`)
+      showAlert('Erro ao Criar Vínculo', `Não foi possível criar o vínculo: ${error.message}`, 'error')
     } else {
-      alert('Vínculo criado com sucesso!')
+      showAlert('Sucesso!', 'Vínculo criado com sucesso!', 'success')
       resetForm()
       loadVinculos(professor.id)
     }
@@ -212,22 +215,25 @@ export default function MeusVinculosPage() {
   }
 
   async function handleDelete(vinculoId: string) {
-    if (!confirm('Deseja desvincular desta instituição? Suas disciplinas nesta instituição permanecerão.')) {
-      return
-    }
+    showConfirm(
+      'Confirmar Desvinculação',
+      'Deseja desvincular desta instituição? Suas disciplinas nesta instituição permanecerão.',
+      async () => {
+        const { error } = await supabase
+          .from('syllab_professor_instituicoes')
+          .update({ ativo: false, data_fim: new Date().toISOString() })
+          .eq('id', vinculoId)
 
-    const { error } = await supabase
-      .from('syllab_professor_instituicoes')
-      .update({ ativo: false, data_fim: new Date().toISOString() })
-      .eq('id', vinculoId)
-
-    if (error) {
-      console.error('Erro ao desvincular:', error)
-      alert('Erro ao desvincular')
-    } else {
-      alert('Desvinculado com sucesso!')
-      if (professor) loadVinculos(professor.id)
-    }
+        if (error) {
+          console.error('Erro ao desvincular:', error)
+          showAlert('Erro ao Desvincular', 'Não foi possível desvincular da instituição.', 'error')
+        } else {
+          showAlert('Sucesso!', 'Desvinculado com sucesso!', 'success')
+          if (professor) loadVinculos(professor.id)
+        }
+      },
+      { variant: 'destructive', confirmText: 'Desvincular' }
+    )
   }
 
   // Filtrar instituições que ainda não estão vinculadas
@@ -414,6 +420,8 @@ export default function MeusVinculosPage() {
           )}
         </main>
       </div>
+      <AlertComponent />
+      <ConfirmComponent />
     </ProtectedRoute>
   )
 }

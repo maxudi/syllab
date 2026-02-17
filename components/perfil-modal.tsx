@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import UrlOuUpload from '@/components/url-ou-upload'
 import { X, Save, Key, Building2, Plus, User as UserIcon } from 'lucide-react'
+import { useAlert, useConfirm } from '@/components/alert-dialog'
 
 type Professor = {
   id: string
@@ -40,6 +41,8 @@ type PerfilModalProps = {
 }
 
 export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
+  const { showAlert, AlertComponent } = useAlert()
+  const { showConfirm, ConfirmComponent } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [professor, setProfessor] = useState<Professor | null>(null)
@@ -119,7 +122,7 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
 
     } catch (error) {
       console.error('Erro ao carregar dados:', error)
-      alert('Erro ao carregar dados do perfil')
+      showAlert('Erro ao Carregar Dados', 'Não foi possível carregar os dados do perfil.', 'error')
     } finally {
       setLoading(false)
     }
@@ -129,7 +132,7 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
     e.preventDefault()
     
     if (!formData.nome || !formData.email) {
-      alert('Preencha os campos obrigatórios')
+      showAlert('Campos Obrigatórios', 'Por favor, preencha os campos obrigatórios (nome e e-mail).', 'warning')
       return
     }
 
@@ -150,13 +153,13 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
 
       if (error) throw error
 
-      alert('Dados atualizados com sucesso!')
+      showAlert('Sucesso!', 'Dados atualizados com sucesso!', 'success')
       loadData()
       // Recarregar página para atualizar header
       window.location.reload()
     } catch (error: any) {
       console.error('Erro ao atualizar:', error)
-      alert(`Erro ao atualizar: ${error.message}`)
+      showAlert('Erro ao Atualizar', `Não foi possível atualizar os dados: ${error.message}`, 'error')
     } finally {
       setSaving(false)
     }
@@ -164,29 +167,29 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
 
   async function handleAlterarSenha() {
     if (!novaSenha || novaSenha.length < 6) {
-      alert('A senha deve ter no mínimo 6 caracteres')
+      showAlert('Senha Inválida', 'A senha deve ter no mínimo 6 caracteres.', 'warning')
       return
     }
 
     if (novaSenha !== confirmarSenha) {
-      alert('As senhas não conferem')
+      showAlert('Senhas Não Conferem', 'A nova senha e a confirmação não são iguais.', 'warning')
       return
     }
 
     try {
       await updatePassword(novaSenha)
-      alert('Senha alterada com sucesso!')
+      showAlert('Sucesso!', 'Senha alterada com sucesso!', 'success')
       setNovaSenha('')
       setConfirmarSenha('')
     } catch (error: any) {
       console.error('Erro ao alterar senha:', error)
-      alert(`Erro ao alterar senha: ${error.message}`)
+      showAlert('Erro ao Alterar Senha', `Não foi possível alterar a senha: ${error.message}`, 'error')
     }
   }
 
   async function handleAdicionarVinculo() {
     if (!novoVinculo.instituicao_id) {
-      alert('Selecione uma instituição')
+      showAlert('Instituição Não Selecionada', 'Por favor, selecione uma instituição.', 'warning')
       return
     }
 
@@ -202,32 +205,37 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
 
       if (error) throw error
 
-      alert('Você foi adicionado à instituição com sucesso!')
+      showAlert('Sucesso!', 'Você foi adicionado à instituição com sucesso!', 'success')
       setNovoVinculo({ instituicao_id: '', cargo: '' })
       loadData()
     } catch (error: any) {
       console.error('Erro ao adicionar vínculo:', error)
-      alert(`Erro ao adicionar vínculo: ${error.message}`)
+      showAlert('Erro ao Adicionar Vínculo', `Não foi possível adicionar o vínculo: ${error.message}`, 'error')
     }
   }
 
   async function handleRemoverVinculo(vinculoId: string) {
-    if (!confirm('Deseja se desvincular desta instituição?')) return
+    showConfirm(
+      'Confirmar Desvinculação',
+      'Deseja se desvincular desta instituição?',
+      async () => {
+        try {
+          const { error } = await supabase
+            .from('syllab_professor_instituicoes')
+            .update({ ativo: false })
+            .eq('id', vinculoId)
 
-    try {
-      const { error } = await supabase
-        .from('syllab_professor_instituicoes')
-        .update({ ativo: false })
-        .eq('id', vinculoId)
+          if (error) throw error
 
-      if (error) throw error
-
-      alert('Vínculo removido com sucesso!')
-      loadData()
-    } catch (error: any) {
-      console.error('Erro ao remover vínculo:', error)
-      alert(`Erro ao remover vínculo: ${error.message}`)
-    }
+          showAlert('Sucesso!', 'Vínculo removido com sucesso!', 'success')
+          loadData()
+        } catch (error: any) {
+          console.error('Erro ao remover vínculo:', error)
+          showAlert('Erro ao Remover Vínculo', `Não foi possível remover o vínculo: ${error.message}`, 'error')
+        }
+      },
+      { variant: 'destructive', confirmText: 'Desvincular' }
+    )
   }
 
   if (!isOpen) return null
@@ -361,6 +369,7 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
                       value={formData.foto_url}
                       onChange={(v) => setFormData({ ...formData, foto_url: v })}
                       placeholder="Cole uma URL ou envie um arquivo"
+                      bucket="syllab"
                       folder={professor?.id ? `professores/${professor.id}` : 'professores'}
                       accept="image/*"
                       preview
@@ -514,6 +523,8 @@ export function PerfilModal({ isOpen, onClose }: PerfilModalProps) {
           )}
         </div>
       </div>
+      <AlertComponent />
+      <ConfirmComponent />
     </div>
   )
 }

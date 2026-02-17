@@ -352,8 +352,10 @@ export default function ConteudosDisciplinaPage() {
                         value={formData.arquivo_url}
                         onChange={(v) => setFormData({ ...formData, arquivo_url: v })}
                         placeholder="Cole uma URL ou envie um arquivo"
+                        bucket="syllab"
                         folder={disciplina ? `disciplinas/${disciplina.id}/conteudos` : 'disciplinas/conteudos'}
-                        accept="image/*,.pdf,application/pdf"
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        helperText="Arraste um arquivo ou cole uma URL. Formatos aceitos: PDF, Word, Excel, PowerPoint, Imagens"
                         preview
                       />
                     </div>
@@ -662,6 +664,93 @@ export default function ConteudosDisciplinaPage() {
                                         Baixar Arquivo
                                       </a>
                                     )}
+                                  </div>
+                                  <div className="flex gap-2 ml-4">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleEdit(conteudo)}
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleDelete(conteudo.id)}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Avaliações */}
+                {conteudos.filter(c => c.tipo === 'avaliativo').length > 0 && (
+                  <div className="mt-8">
+                    <h2 className="text-2xl font-bold text-slate-900 mb-4">Avaliações</h2>
+                    <div className="grid grid-cols-1 gap-4">
+                      {conteudos
+                        .filter(c => c.tipo === 'avaliativo')
+                        .map((conteudo) => {
+                          const cores = getTemaColors(conteudo.cor_tema)
+                          return (
+                            <Card 
+                              key={conteudo.id}
+                              className="hover:shadow-lg transition-shadow"
+                              style={{ 
+                                borderLeft: `6px solid ${cores.border}`,
+                                backgroundColor: cores.bg
+                              }}
+                            >
+                              <CardContent className="p-6">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h3 
+                                      className="text-xl font-bold mb-2"
+                                      style={{ color: cores.text }}
+                                    >
+                                      {conteudo.titulo}
+                                    </h3>
+                                    {conteudo.descricao && (
+                                      <p className="text-sm text-slate-700 mb-3">
+                                        {conteudo.descricao}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                                      {conteudo.data_limite && (
+                                        <div className="flex items-center gap-1">
+                                          <Calendar className="w-4 h-4" />
+                                          <span>Prazo: {new Date(conteudo.data_limite).toLocaleDateString('pt-BR')}</span>
+                                        </div>
+                                      )}
+                                      {conteudo.arquivo_url && (
+                                        <a 
+                                          href={conteudo.arquivo_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1 hover:underline text-blue-600"
+                                        >
+                                          <File className="w-4 h-4" />
+                                          Arquivo
+                                        </a>
+                                      )}
+                                      {conteudo.tem_slides && (
+                                        <button
+                                          onClick={() => router.push(`/professor/conteudo/${conteudo.id}/slides`)}
+                                          className="flex items-center gap-1 text-blue-600 hover:underline"
+                                        >
+                                          <Presentation className="w-4 h-4" />
+                                          Gerenciar Slides
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex gap-2 ml-4">
                                     <Button

@@ -14,8 +14,12 @@ import { supabase, type Disciplina, type Conteudo, type Professor } from '@/lib/
 import { getCurrentUser } from '@/lib/auth'
 import { Plus, Trash2, Edit, Save, X, BookOpen, Building2, Presentation } from 'lucide-react'
 import Link from 'next/link'
+import { useAlert, useConfirm } from '@/components/alert-dialog'
+import UrlOuUpload from '@/components/url-ou-upload'
 
 export default function ProfessorPage() {
+  const { showAlert, AlertComponent } = useAlert()
+  const { showConfirm, ConfirmComponent } = useConfirm()
   const router = useRouter()
   const [professor, setProfessor] = useState<Professor | null>(null)
   const [disciplinas, setDisciplinas] = useState<Disciplina[]>([])
@@ -24,6 +28,8 @@ export default function ProfessorPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [temInstituicoes, setTemInstituicoes] = useState<boolean>(false)
+  const [verificandoInstituicoes, setVerificandoInstituicoes] = useState<boolean>(true)
   
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -79,11 +85,12 @@ export default function ProfessorPage() {
 
         if (createError) {
           console.error('Erro ao criar professor:', createError)
-          alert('Erro ao criar perfil de professor. Verifique as permissões no banco de dados.')
+          showAlert('Erro ao Criar Perfil', 'Não foi possível criar o perfil de professor. Verifique as permissões no banco de dados.', 'error')
           return
         }
         console.log('Professor criado:', newProf)
         setProfessor(newProf)
+        await verificarInstituicoes(newProf.id)
         loadDisciplinas(newProf.id)
       } else {
         console.error('Erro ao buscar professor:', profError)
@@ -91,9 +98,31 @@ export default function ProfessorPage() {
     } else {
       console.log('Professor encontrado:', professorData)
       setProfessor(professorData)
+      await verificarInstituicoes(professorData.id)
       await loadDisciplinas(professorData.id)
     }
     setLoading(false)
+  }
+
+  async function verificarInstituicoes(professorId: string) {
+    setVerificandoInstituicoes(true)
+    console.log('Verificando instituições vinculadas ao professor:', professorId)
+    
+    const { data, error } = await supabase
+      .from('syllab_professor_instituicoes')
+      .select('id')
+      .eq('professor_id', professorId)
+      .eq('ativo', true)
+      .limit(1)
+
+    if (error) {
+      console.error('Erro ao verificar instituições:', error)
+      setTemInstituicoes(false)
+    } else {
+      setTemInstituicoes((data && data.length > 0) || false)
+      console.log('Professor tem instituições vinculadas:', (data && data.length > 0))
+    }
+    setVerificandoInstituicoes(false)
   }
 
   async function loadDisciplinas(professorId: string) {
@@ -163,7 +192,7 @@ export default function ProfessorPage() {
     e.preventDefault()
     
     if (!selectedDisciplina) {
-      alert('Selecione uma disciplina primeiro')
+      showAlert('Disciplina Não Selecionada', 'Por favor, selecione uma disciplina antes de criar ou editar conteúdo.', 'warning')
       return
     }
 
@@ -191,10 +220,10 @@ export default function ProfessorPage() {
       if (error) {
         console.error('Erro ao atualizar conteúdo:', error)
         console.error('Detalhes do erro:', JSON.stringify(error, null, 2))
-        alert(`Erro ao atualizar conteúdo: ${error.message}`)
+        showAlert('Erro ao Atualizar', `Não foi possível atualizar o conteúdo: ${error.message}`, 'error')
       } else {
         console.log('Conteúdo atualizado:', data)
-        alert('Conteúdo atualizado com sucesso!')
+        showAlert('Sucesso!', 'Conteúdo atualizado com sucesso!', 'success')
         resetForm()
         loadConteudos()
       }
@@ -214,10 +243,10 @@ export default function ProfessorPage() {
         console.error('Mensagem:', error.message)
         console.error('Detalhes:', error.details)
         console.error('Hint:', error.hint)
-        alert(`Erro ao criar conteúdo: ${error.message}\n\nVerifique o console para mais detalhes.`)
+        showAlert('Erro ao Criar Conteúdo', `Não foi possível criar o conteúdo: ${error.message}. Verifique o console para mais detalhes.`, 'error')
       } else {
         console.log('Conteúdo criado com sucesso:', data)
-        alert('Conteúdo criado com sucesso!')
+        showAlert('Sucesso!', 'Conteúdo criado com sucesso!', 'success')
         resetForm()
         loadConteudos()
       }
@@ -225,22 +254,25 @@ export default function ProfessorPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Tem certeza que deseja excluir este conteúdo?')) {
-      return
-    }
+    showConfirm(
+      'Confirmar Exclusão',
+      'Tem certeza que deseja excluir este conteúdo? Esta ação não pode ser desfeita.',
+      async () => {
+        const { error } = await supabase
+          .from('syllab_conteudos')
+          .delete()
+          .eq('id', id)
 
-    const { error } = await supabase
-      .from('syllab_conteudos')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.error('Erro ao excluir conteúdo:', error)
-      alert('Erro ao excluir conteúdo')
-    } else {
-      alert('Conteúdo excluído com sucesso!')
-      loadConteudos()
-    }
+        if (error) {
+          console.error('Erro ao excluir conteúdo:', error)
+          showAlert('Erro ao Excluir', 'Não foi possível excluir o conteúdo.', 'error')
+        } else {
+          showAlert('Sucesso!', 'Conteúdo excluído com sucesso!', 'success')
+          loadConteudos()
+        }
+      },
+      { variant: 'destructive', confirmText: 'Excluir' }
+    )
   }
 
   const getTipoLabel = (tipo: string) => {
@@ -293,8 +325,31 @@ export default function ProfessorPage() {
           </div>
         ) : (
           <>
+            {/* Aviso se não houver instituições vinculadas */}
+            {!verificandoInstituicoes && !temInstituicoes && (
+              <Card className="mb-6 border-amber-300 bg-amber-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start space-x-3">
+                    <Building2 className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium text-amber-900">Você precisa estar vinculado a uma instituição</h3>
+                      <p className="text-sm text-amber-800 mt-1">
+                        Antes de gerenciar disciplinas e conteúdos, você precisa cadastrar ou se vincular a uma instituição de ensino.
+                      </p>
+                      <Link href="/professor/instituicoes">
+                        <Button size="sm" className="mt-3">
+                          <Building2 className="w-4 h-4 mr-2" />
+                          Gerenciar Instituições
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Aviso se não houver disciplinas */}
-            {disciplinas.length === 0 && (
+            {temInstituicoes && disciplinas.length === 0 && (
               <Card className="mb-6 border-yellow-300 bg-yellow-50">
                 <CardContent className="pt-6">
                   <div className="flex items-start space-x-3">
@@ -315,28 +370,30 @@ export default function ProfessorPage() {
           </Card>
         )}
 
-            {/* Seleção de Disciplina */}
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle>Selecionar Disciplina</CardTitle>
-                <CardDescription>Escolha a disciplina para gerenciar o conteúdo</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Select 
-                  value={selectedDisciplina}
-                  onChange={(e) => setSelectedDisciplina(e.target.value)}
-                >
-                  <option value="">Selecione uma disciplina...</option>
-                  {disciplinas.map(disc => (
-                    <option key={disc.id} value={disc.id}>
-                      {disc.codigo ? `${disc.codigo} - ` : ''}{disc.nome}
-                    </option>
-                  ))}
-                </Select>
-              </CardContent>
-            </Card>
+            {/* Seleção de Disciplina - Só mostra se tiver instituições vinculadas */}
+            {temInstituicoes && (
+              <Card className="mb-8">
+                <CardHeader>
+                  <CardTitle>Selecionar Disciplina</CardTitle>
+                  <CardDescription>Escolha a disciplina para gerenciar o conteúdo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Select 
+                    value={selectedDisciplina}
+                    onChange={(e) => setSelectedDisciplina(e.target.value)}
+                  >
+                    <option value="">Selecione uma disciplina...</option>
+                    {disciplinas.map(disc => (
+                      <option key={disc.id} value={disc.id}>
+                        {disc.codigo ? `${disc.codigo} - ` : ''}{disc.nome}
+                      </option>
+                    ))}
+                  </Select>
+                </CardContent>
+              </Card>
+            )}
 
-            {selectedDisciplina && (
+            {selectedDisciplina && temInstituicoes && (
             <div>
             {/* Botão Adicionar */}
             <div className="mb-6">
@@ -425,13 +482,16 @@ export default function ProfessorPage() {
                       </div>
 
                       <div>
-                        <Label htmlFor="arquivo_url">URL do Arquivo</Label>
-                        <Input
-                          id="arquivo_url"
-                          type="url"
+                        <UrlOuUpload
+                          label="URL do Arquivo"
                           value={formData.arquivo_url}
-                          onChange={(e) => handleInputChange('arquivo_url', e.target.value)}
-                          placeholder="https://..."
+                          onChange={(v) => handleInputChange('arquivo_url', v)}
+                          placeholder="Cole uma URL ou envie um arquivo"
+                          bucket="syllab"
+                          folder={selectedDisciplina ? `disciplinas/${selectedDisciplina}/conteudos` : 'disciplinas/conteudos'}
+                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                          helperText="Arraste um arquivo ou cole uma URL. Formatos aceitos: PDF, Word, Excel, PowerPoint, Imagens"
+                          preview
                         />
                       </div>
 
@@ -537,9 +597,10 @@ export default function ProfessorPage() {
             </div>
         )}
           </>
-        )}
-      </main>
+        )}      </main>
     </div>
+    <AlertComponent />
+    <ConfirmComponent />
     </ProtectedRoute>
   )
 }

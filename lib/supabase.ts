@@ -45,6 +45,8 @@ export type Instituicao = {
   sigla: string | null
   logo_url: string | null
   descricao: string | null
+  cidade: string | null
+  uf: string | null
   ativo: boolean
   created_at: string
   updated_at: string
@@ -76,6 +78,8 @@ export type Disciplina = {
   capa_url: string | null
   cor_tema: string
   documentos_gerais: string | null
+  publica: boolean
+  codigo_acesso: string | null
   ativo: boolean
   created_at: string
   updated_at: string

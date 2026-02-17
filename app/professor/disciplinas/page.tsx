@@ -12,10 +12,13 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { supabase, type Disciplina, type Instituicao, type Professor } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
-import { Plus, Trash2, Edit, Save, X, BookOpen, Building2, Link as LinkIcon, FileText } from 'lucide-react'
+import { Plus, Trash2, Edit, Save, X, BookOpen, Building2, Link as LinkIcon, FileText, Lock, Globe, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
+import { useAlert, useConfirm } from '@/components/alert-dialog'
 
 export default function DisciplinasPage() {
+  const { showAlert, AlertComponent } = useAlert()
+  const { showConfirm, ConfirmComponent } = useConfirm()
   const router = useRouter()
   const [disciplinas, setDisciplinas] = useState<Disciplina[]>([])
   const [instituicoes, setInstituicoes] = useState<Instituicao[]>([])
@@ -23,6 +26,7 @@ export default function DisciplinasPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [codigoCopied, setCodigoCopied] = useState<string | null>(null)
   
   const [formData, setFormData] = useState({
     nome: '',
@@ -32,7 +36,9 @@ export default function DisciplinasPage() {
     semestre: '',
     ano: new Date().getFullYear().toString(),
     instituicao_id: '',
-    cor_tema: '#1e40af'
+    cor_tema: '#1e40af',
+    publica: true,
+    codigo_acesso: ''
   })
 
   useEffect(() => {
@@ -41,7 +47,6 @@ export default function DisciplinasPage() {
 
   async function init() {
     await loadProfessor()
-    await loadInstituicoes()
   }
 
   async function loadProfessor() {
@@ -74,17 +79,19 @@ export default function DisciplinasPage() {
 
         if (createError) {
           console.error('Erro ao criar professor:', createError)
-          alert('Erro ao criar perfil de professor. Verifique as permissões.')
+          showAlert('Erro', 'Erro ao criar perfil de professor. Verifique as permissões.', 'error')
           return
         }
         setProfessor(newProf)
         loadDisciplinas(newProf.id)
+        loadInstituicoes(newProf.id)
       } else {
         console.error('Erro ao buscar professor:', profError)
       }
     } else {
       setProfessor(professorData)
       loadDisciplinas(professorData.id)
+      loadInstituicoes(professorData.id)
     }
   }
 
@@ -112,18 +119,50 @@ export default function DisciplinasPage() {
     setLoading(false)
   }
 
-  async function loadInstituicoes() {
+  async function loadInstituicoes(professorId: string) {
+    // Buscar IDs das instituições vinculadas ao professor
+    const { data: vinculos, error: errorVinculos } = await supabase
+      .from('syllab_professor_instituicoes')
+      .select('instituicao_id')
+      .eq('professor_id', professorId)
+      .eq('ativo', true)
+
+    if (errorVinculos) {
+      console.error('Erro ao carregar vínculos:', errorVinculos)
+      setInstituicoes([])
+      return
+    }
+
+    if (!vinculos || vinculos.length === 0) {
+      setInstituicoes([])
+      return
+    }
+
+    // Buscar as instituições pelos IDs
+    const instituicaoIds = vinculos.map(v => v.instituicao_id)
     const { data, error } = await supabase
       .from('syllab_instituicoes')
       .select('*')
+      .in('id', instituicaoIds)
       .eq('ativo', true)
       .order('nome')
 
     if (error) {
       console.error('Erro ao carregar instituições:', error)
+      setInstituicoes([])
     } else {
       setInstituicoes(data || [])
     }
+  }
+
+  function gerarCodigoAcesso(): string {
+    // Gera um código único de 8 caracteres (letras maiúsculas e números)
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let codigo = ''
+    for (let i = 0; i < 8; i++) {
+      codigo += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return codigo
   }
 
   function resetForm() {
@@ -135,7 +174,9 @@ export default function DisciplinasPage() {
       semestre: '',
       ano: new Date().getFullYear().toString(),
       instituicao_id: '',
-      cor_tema: '#1e40af'
+      cor_tema: '#1e40af',
+      publica: true,
+      codigo_acesso: ''
     })
     setEditingId(null)
     setShowForm(false)
@@ -150,7 +191,9 @@ export default function DisciplinasPage() {
       semestre: disciplina.semestre || '',
       ano: disciplina.ano?.toString() || '',
       instituicao_id: disciplina.instituicao_id,
-      cor_tema: disciplina.cor_tema
+      cor_tema: disciplina.cor_tema,
+      publica: disciplina.publica !== undefined ? disciplina.publica : true,
+      codigo_acesso: disciplina.codigo_acesso || ''
     })
     setEditingId(disciplina.id)
     setShowForm(true)
@@ -193,12 +236,12 @@ export default function DisciplinasPage() {
     e.preventDefault()
 
     if (!professor) {
-      alert('Erro: Professor não identificado')
+      showAlert('Erro', 'Professor não identificado', 'error')
       return
     }
 
     if (!formData.instituicao_id) {
-      alert('Selecione uma instituição')
+      showAlert('Atenção', 'Selecione uma instituição', 'warning')
       return
     }
 
@@ -207,15 +250,24 @@ export default function DisciplinasPage() {
     // Vincular professor à instituição (se ainda não estiver vinculado)
     const vinculado = await vincularProfessorInstituicao(professor.id, formData.instituicao_id)
     if (!vinculado && !editingId) {
-      alert('Erro ao vincular professor à instituição')
+      showAlert('Erro', 'Erro ao vincular professor à instituição', 'error')
       setLoading(false)
       return
+    }
+
+    // Se a disciplina não é pública e não tem código, gerar um
+    let codigoAcesso = formData.codigo_acesso
+    if (!formData.publica && !codigoAcesso) {
+      codigoAcesso = gerarCodigoAcesso()
+    } else if (formData.publica) {
+      codigoAcesso = '' // Limpar código se a disciplina for pública
     }
 
     const disciplinaData = {
       ...formData,
       carga_horaria: formData.carga_horaria ? parseInt(formData.carga_horaria) : null,
       ano: formData.ano ? parseInt(formData.ano) : null,
+      codigo_acesso: codigoAcesso || null,
       professor_id: professor.id
     }
 
@@ -230,9 +282,9 @@ export default function DisciplinasPage() {
 
       if (error) {
         console.error('Erro ao atualizar disciplina:', error)
-        alert(`Erro ao atualizar disciplina: ${error.message}`)
+        showAlert('Erro', `Erro ao atualizar disciplina: ${error.message}`, 'error')
       } else {
-        alert('Disciplina atualizada com sucesso!')
+        showAlert('Sucesso', 'Disciplina atualizada com sucesso!', 'success')
         resetForm()
         loadDisciplinas(professor.id)
       }
@@ -244,9 +296,9 @@ export default function DisciplinasPage() {
 
       if (error) {
         console.error('Erro ao criar disciplina:', error)
-        alert(`Erro ao criar disciplina: ${error.message}`)
+        showAlert('Erro', `Erro ao criar disciplina: ${error.message}`, 'error')
       } else {
-        alert('Disciplina criada com sucesso! Você foi automaticamente vinculado a esta instituição.')
+        showAlert('Sucesso', 'Disciplina criada com sucesso! Você foi automaticamente vinculado a esta instituição.', 'success')
         resetForm()
         loadDisciplinas(professor.id)
       }
@@ -255,9 +307,17 @@ export default function DisciplinasPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Tem certeza que deseja excluir esta disciplina?')) {
-      return
-    }
+    showConfirm(
+      'Excluir Disciplina',
+      'Tem certeza que deseja excluir esta disciplina? Esta ação não pode ser desfeita.',
+      async () => {
+        await executeDelete(id)
+      },
+      { variant: 'destructive', confirmText: 'Excluir' }
+    )
+  }
+
+  async function executeDelete(id: string) {
 
     const { error } = await supabase
       .from('syllab_disciplinas')
@@ -266,9 +326,9 @@ export default function DisciplinasPage() {
 
     if (error) {
       console.error('Erro ao excluir disciplina:', error)
-      alert('Erro ao excluir disciplina')
+      showAlert('Erro', 'Erro ao excluir disciplina', 'error')
     } else {
-      alert('Disciplina excluída com sucesso!')
+      showAlert('Sucesso', 'Disciplina excluída com sucesso!', 'success')
       if (professor) loadDisciplinas(professor.id)
     }
   }
@@ -309,29 +369,28 @@ export default function DisciplinasPage() {
             </div>
           </div>
 
-          {instituicoes.length === 0 && (
-            <Card className="mb-6 border-yellow-300 bg-yellow-50">
-              <CardContent className="pt-6">
-                <div className="flex items-start space-x-3">
-                  <Building2 className="h-6 w-6 text-yellow-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-yellow-900">Nenhuma instituição cadastrada</h3>
-                    <p className="text-sm text-yellow-800 mt-1">
-                      Antes de criar disciplinas, você precisa cadastrar pelo menos uma instituição.
-                    </p>
-                    <Link href="/professor/instituicoes">
-                      <Button size="sm" className="mt-3">
-                        Cadastrar Instituição
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Botão Adicionar */}
-          {instituicoes.length > 0 && (
+          {instituicoes.length === 0 ? (
+            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <Building2 className="w-5 h-5 text-amber-600 mr-3 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-900 mb-1">
+                    Você precisa estar vinculado a uma instituição
+                  </p>
+                  <p className="text-sm text-amber-700 mb-3">
+                    Para criar disciplinas, primeiro cadastre ou vincule-se a uma instituição de ensino.
+                  </p>
+                  <Link href="/professor/instituicoes">
+                    <Button size="sm" variant="outline">
+                      <Building2 className="w-4 h-4 mr-2" />
+                      Gerenciar Instituições
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : (
             <div className="mb-6">
               <Button onClick={() => setShowForm(!showForm)} disabled={loading}>
                 {showForm ? (
@@ -390,15 +449,22 @@ export default function DisciplinasPage() {
                         value={formData.instituicao_id}
                         onChange={(e) => setFormData({ ...formData, instituicao_id: e.target.value })}
                         required
-                        disabled={loading}
+                        disabled={loading || instituicoes.length === 0}
                       >
-                        <option value="">Selecione...</option>
+                        <option value="">
+                          {instituicoes.length === 0 ? 'Nenhuma instituição vinculada' : 'Selecione...'}
+                        </option>
                         {instituicoes.map(inst => (
                           <option key={inst.id} value={inst.id}>
                             {inst.sigla ? `${inst.sigla} - ` : ''}{inst.nome}
                           </option>
                         ))}
                       </Select>
+                      {instituicoes.length === 0 && (
+                        <p className="text-sm text-amber-600 mt-1">
+                          Você precisa se vincular a uma instituição primeiro.
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -458,6 +524,86 @@ export default function DisciplinasPage() {
                     </div>
 
                     <div className="md:col-span-2">
+                      <Label htmlFor="publica">Visibilidade da Disciplina</Label>
+                      <div className="flex items-center space-x-4 mt-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="publica"
+                            checked={formData.publica === true}
+                            onChange={() => setFormData({ ...formData, publica: true, codigo_acesso: '' })}
+                            disabled={loading}
+                            className="w-4 h-4"
+                          />
+                          <Globe className="w-4 h-4 text-green-600" />
+                          <span className="text-sm">Pública - Todos podem acessar</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="publica"
+                            checked={formData.publica === false}
+                            onChange={() => {
+                              const novoCodigo = formData.codigo_acesso || gerarCodigoAcesso()
+                              setFormData({ ...formData, publica: false, codigo_acesso: novoCodigo })
+                            }}
+                            disabled={loading}
+                            className="w-4 h-4"
+                          />
+                          <Lock className="w-4 h-4 text-amber-600" />
+                          <span className="text-sm">Privada - Requer código de acesso</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {!formData.publica && (
+                      <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                        <Label htmlFor="codigo_acesso" className="flex items-center text-amber-900">
+                          <Lock className="w-4 h-4 mr-2" />
+                          Código de Acesso
+                        </Label>
+                        <div className="flex items-center space-x-2 mt-2">
+                          <Input
+                            id="codigo_acesso"
+                            value={formData.codigo_acesso}
+                            readOnly
+                            className="font-mono text-lg font-bold bg-white"
+                            disabled={loading}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(formData.codigo_acesso)
+                              setCodigoCopied(formData.codigo_acesso)
+                              setTimeout(() => setCodigoCopied(null), 2000)
+                            }}
+                            disabled={loading}
+                          >
+                            {codigoCopied === formData.codigo_acesso ? (
+                              <Check className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setFormData({ ...formData, codigo_acesso: gerarCodigoAcesso() })}
+                            disabled={loading}
+                          >
+                            Gerar Novo
+                          </Button>
+                        </div>
+                        <p className="text-xs text-amber-700 mt-2">
+                          Compartilhe este código com seus alunos para que possam acessar a disciplina.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="md:col-span-2">
                       <Label htmlFor="descricao">Descrição</Label>
                       <Textarea
                         id="descricao"
@@ -508,11 +654,24 @@ export default function DisciplinasPage() {
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between mb-2">
-                      {disciplina.codigo && (
-                        <span className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                          {disciplina.codigo}
-                        </span>
-                      )}
+                      <div className="flex gap-2">
+                        {disciplina.codigo && (
+                          <span className="text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            {disciplina.codigo}
+                          </span>
+                        )}
+                        {!disciplina.publica ? (
+                          <span className="text-sm text-amber-700 bg-amber-50 px-2 py-1 rounded flex items-center">
+                            <Lock className="w-3 h-3 mr-1" />
+                            Privada
+                          </span>
+                        ) : (
+                          <span className="text-sm text-green-700 bg-green-50 px-2 py-1 rounded flex items-center">
+                            <Globe className="w-3 h-3 mr-1" />
+                            Pública
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <CardTitle className="text-lg">{disciplina.nome}</CardTitle>
                     <CardDescription>
@@ -530,6 +689,26 @@ export default function DisciplinasPage() {
                         {disciplina.carga_horaria && (
                           <div className="text-sm">
                             {disciplina.carga_horaria}h
+                          </div>
+                        )}
+                        {!disciplina.publica && disciplina.codigo_acesso && (
+                          <div className="text-sm font-mono bg-amber-100 text-amber-900 px-2 py-1 rounded mt-2 flex items-center justify-between">
+                            <span>Código: {disciplina.codigo_acesso}</span>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault()
+                                navigator.clipboard.writeText(disciplina.codigo_acesso || '')
+                                setCodigoCopied(disciplina.codigo_acesso || null)
+                                setTimeout(() => setCodigoCopied(null), 2000)
+                              }}
+                              className="ml-2 p-1 hover:bg-amber-200 rounded"
+                            >
+                              {codigoCopied === disciplina.codigo_acesso ? (
+                                <Check className="w-3 h-3 text-green-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
                           </div>
                         )}
                       </div>
@@ -579,6 +758,10 @@ export default function DisciplinasPage() {
           </div>
         </main>
       </div>
+      
+      {/* Modais */}
+      <AlertComponent />
+      <ConfirmComponent />
     </ProtectedRoute>
   )
 }

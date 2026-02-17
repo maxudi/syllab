@@ -9,8 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { RichTextEditor } from '@/components/rich-text-editor'
+import { IconSelector } from '@/components/icon-selector'
+import { AIContentGenerator } from '@/components/ai-content-generator'
 import { Select } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
+import { useAlert, useConfirm } from '@/components/alert-dialog'
 import { Plus, Trash2, Edit, Save, X, ArrowLeft, ArrowUp, ArrowDown, Eye, Image, FileText, Link as LinkIcon, Film } from 'lucide-react'
 import Link from 'next/link'
 
@@ -40,11 +44,14 @@ export default function SlidesManagerPage() {
   const params = useParams()
   const router = useRouter()
   const conteudoId = params?.id as string
+  const { showAlert, AlertComponent } = useAlert()
+  const { showConfirm, ConfirmComponent } = useConfirm()
 
   const [conteudo, setConteudo] = useState<Conteudo | null>(null)
   const [slides, setSlides] = useState<Slide[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editorKey, setEditorKey] = useState(0) // Força re-render do editor
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -54,7 +61,8 @@ export default function SlidesManagerPage() {
     midia_legenda: '',
     icone: '',
     notas_professor: '',
-    duracao_estimada: 5
+    duracao_estimada: 5,
+    ordem: 0
   })
 
   useEffect(() => {
@@ -73,7 +81,7 @@ export default function SlidesManagerPage() {
 
     if (error) {
       console.error('Erro ao carregar conteúdo:', error)
-      alert('Erro ao carregar conteúdo')
+      showAlert('Erro', 'Não foi possível carregar os dados do conteúdo.', 'error')
     } else {
       setConteudo(data)
     }
@@ -95,10 +103,37 @@ export default function SlidesManagerPage() {
   }
 
   function handleInputChange(field: string, value: any) {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    if (field === 'conteudo_html') {
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('📝 HANDLE INPUT CHANGE')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('📊 Valor recebido (length):', value?.length || 0)
+      console.log('📄 Valor recebido:', value)
+      
+      // Se recebeu muito conteúdo (> 100 chars), provavelmente veio da IA
+      // Força re-render do editor
+      if (value && value.length > 100) {
+        console.log('🔄 Conteúdo grande detectado - forçando re-render do editor')
+        setEditorKey(prev => prev + 1)
+      }
+    }
+    
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value }
+      if (field === 'conteudo_html') {
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('✅ FORM DATA ATUALIZADO')  
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        console.log('📊 conteudo_html (length):', newData.conteudo_html?.length || 0)
+        console.log('📄 conteudo_html:', newData.conteudo_html)
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      }
+      return newData
+    })
   }
 
   function resetForm() {
+    const nextOrdem = slides.length > 0 ? Math.max(...slides.map(s => s.ordem)) + 1 : 0
     setFormData({
       titulo: '',
       conteudo_html: '',
@@ -107,13 +142,16 @@ export default function SlidesManagerPage() {
       midia_legenda: '',
       icone: '',
       notas_professor: '',
-      duracao_estimada: 5
+      duracao_estimada: 5,
+      ordem: nextOrdem
     })
     setEditingId(null)
     setShowForm(false)
+    setEditorKey(prev => prev + 1) // Reset editor
   }
 
   function handleEdit(slide: Slide) {
+    setEditorKey(prev => prev + 1) // Reset editor ao editar
     setFormData({
       titulo: slide.titulo,
       conteudo_html: slide.conteudo_html || '',
@@ -122,7 +160,8 @@ export default function SlidesManagerPage() {
       midia_legenda: slide.midia_legenda || '',
       icone: slide.icone || '',
       notas_professor: slide.notas_professor || '',
-      duracao_estimada: slide.duracao_estimada || 5
+      duracao_estimada: slide.duracao_estimada || 5,
+      ordem: slide.ordem
     })
     setEditingId(slide.id)
     setShowForm(true)
@@ -132,7 +171,7 @@ export default function SlidesManagerPage() {
     e.preventDefault()
 
     if (!formData.titulo.trim()) {
-      alert('O título é obrigatório')
+      showAlert('Campo obrigatório', 'O título do slide é obrigatório.', 'warning')
       return
     }
 
@@ -149,21 +188,20 @@ export default function SlidesManagerPage() {
             midia_legenda: formData.midia_legenda,
             icone: formData.icone,
             notas_professor: formData.notas_professor,
-            duracao_estimada: formData.duracao_estimada
+            duracao_estimada: formData.duracao_estimada,
+            ordem: formData.ordem
           })
           .eq('id', editingId)
 
         if (error) throw error
-        alert('Slide atualizado com sucesso!')
+        showAlert('Sucesso!', 'Slide atualizado com sucesso!', 'success')
       } else {
         // Criar novo slide
-        const maxOrdem = slides.length > 0 ? Math.max(...slides.map(s => s.ordem)) : -1
-        
         const { error } = await supabase
           .from('syllab_slides')
           .insert([{
             conteudo_id: conteudoId,
-            ordem: maxOrdem + 1,
+            ordem: formData.ordem,
             titulo: formData.titulo,
             conteudo_html: formData.conteudo_html,
             tipo_midia: formData.tipo_midia,
@@ -182,32 +220,40 @@ export default function SlidesManagerPage() {
           .update({ tem_slides: true })
           .eq('id', conteudoId)
 
-        alert('Slide criado com sucesso!')
+        showAlert('Sucesso!', 'Slide criado com sucesso!', 'success')
       }
 
       resetForm()
       loadSlides()
     } catch (error: any) {
       console.error('Erro ao salvar slide:', error)
-      alert(`Erro ao salvar slide: ${error.message}`)
+      showAlert('Erro ao salvar', `Não foi possível salvar o slide: ${error.message}`, 'error')
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Deseja realmente excluir este slide?')) return
+    showConfirm(
+      'Excluir slide',
+      'Deseja realmente excluir este slide? Esta ação não pode ser desfeita.',
+      async () => {
+        const { error } = await supabase
+          .from('syllab_slides')
+          .update({ ativo: false })
+          .eq('id', id)
 
-    const { error } = await supabase
-      .from('syllab_slides')
-      .update({ ativo: false })
-      .eq('id', id)
-
-    if (error) {
-      console.error('Erro ao excluir slide:', error)
-      alert('Erro ao excluir slide')
-    } else {
-      alert('Slide excluído com sucesso!')
-      loadSlides()
-    }
+        if (error) {
+          console.error('Erro ao excluir slide:', error)
+          showAlert('Erro', 'Não foi possível excluir o slide.', 'error')
+        } else {
+          showAlert('Sucesso!', 'Slide excluído com sucesso!', 'success')
+          loadSlides()
+        }
+      },
+      {
+        confirmText: 'Excluir',
+        variant: 'destructive'
+      }
+    )
   }
 
   async function handleReorder(slideId: string, direction: 'up' | 'down') {
@@ -234,7 +280,7 @@ export default function SlidesManagerPage() {
       loadSlides()
     } catch (error) {
       console.error('Erro ao reordenar slides:', error)
-      alert('Erro ao reordenar slides')
+      showAlert('Erro', 'Não foi possível reordenar os slides.', 'error')
     }
   }
 
@@ -321,28 +367,31 @@ export default function SlidesManagerPage() {
 
                     <div className="col-span-2 sm:col-span-1">
                       <Label htmlFor="icone">Ícone (Bootstrap Icons)</Label>
-                      <Input
-                        id="icone"
+                      <IconSelector
                         value={formData.icone}
-                        onChange={(e) => handleInputChange('icone', e.target.value)}
+                        onChange={(value) => handleInputChange('icone', value)}
                         placeholder="Ex: bi-shield-lock-fill"
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Veja ícones em: <a href="https://icons.getbootstrap.com" target="_blank" className="text-blue-600">icons.getbootstrap.com</a>
+                        Clique no botão de busca para ver ícones disponíveis
                       </p>
                     </div>
 
                     <div className="col-span-2">
-                      <Label htmlFor="conteudo_html">Conteúdo (HTML)</Label>
-                      <Textarea
-                        id="conteudo_html"
-                        value={formData.conteudo_html}
-                        onChange={(e) => handleInputChange('conteudo_html', e.target.value)}
-                        placeholder="<p>Conteúdo do slide em HTML...</p><ul><li>Item 1</li></ul>"
-                        rows={6}
+                      <div className="flex items-center justify-between mb-2">
+                        <Label htmlFor="conteudo_html">Conteúdo (HTML)</Label>
+                        <AIContentGenerator 
+                          onContentGenerated={(content) => handleInputChange('conteudo_html', content)}
+                        />
+                      </div>
+                      <RichTextEditor
+                        key={editorKey}
+                        value={formData.conteudo_html || ''}
+                        onChange={(html) => handleInputChange('conteudo_html', html)}
+                        placeholder="Digite o conteúdo do slide aqui..."
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Use tags HTML como &lt;p&gt;, &lt;ul&gt;, &lt;strong&gt;, &lt;div class=&quot;highlight-box&quot;&gt; etc.
+                        Use o editor acima para formatar o conteúdo. O HTML é gerado automaticamente.
                       </p>
                     </div>
 
@@ -360,6 +409,20 @@ export default function SlidesManagerPage() {
                         <option value="url">URL/Link</option>
                         <option value="video">Vídeo</option>
                       </select>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <Label htmlFor="ordem">Ordem</Label>
+                      <Input
+                        id="ordem"
+                        type="number"
+                        value={formData.ordem}
+                        onChange={(e) => handleInputChange('ordem', parseInt(e.target.value))}
+                        min="0"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Define a sequência de exibição do slide
+                      </p>
                     </div>
 
                     <div className="col-span-2 sm:col-span-1">
@@ -539,6 +602,8 @@ export default function SlidesManagerPage() {
           )}
         </main>
       </div>
+      <AlertComponent />
+      <ConfirmComponent />
     </ProtectedRoute>
   )
 }

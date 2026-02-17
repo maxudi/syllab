@@ -331,8 +331,7 @@ export default function EditarProfessorPage() {
                     label="URL da Foto"
                     value={formData.foto_url}
                     onChange={(v) => setFormData({ ...formData, foto_url: v })}
-                    placeholder="Cole uma URL ou envie um arquivo"
-                    folder={professor?.id ? `professores/${professor.id}` : 'professores'}
+                    placeholder="Cole uma URL ou envie um arquivo"                    bucket="syllab"                    folder={professor?.id ? `professores/${professor.id}` : 'professores'}
                     accept="image/*"
                     preview
                   />

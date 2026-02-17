@@ -138,7 +138,7 @@ export default function SelecionarProfessorPage() {
                   )}
                   
                   <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    {prof.nome}
+                    Prof. {prof.nome}
                   </h3>
                   
                   <p className="text-sm text-gray-600 mb-4">

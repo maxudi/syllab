@@ -205,6 +205,7 @@ export default function NovoProfessorPage() {
                   value={formData.foto_url}
                   onChange={(v) => setFormData({ ...formData, foto_url: v })}
                   placeholder="Cole uma URL ou envie um arquivo"
+                  bucket="syllab"
                   folder="professores/novo"
                   accept="image/*"
                   preview

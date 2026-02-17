@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, BookOpen, ArrowRight, Clock } from 'lucide-react'
+import { ArrowLeft, BookOpen, ArrowRight, Clock, Lock, Globe } from 'lucide-react'
 
 type Disciplina = {
   id: string
@@ -13,6 +13,8 @@ type Disciplina = {
   codigo: string
   carga_horaria: number
   descricao?: string
+  publica: boolean
+  codigo_acesso: string | null
 }
 
 type Professor = {
@@ -64,7 +66,7 @@ export default function SelecionarDisciplinaPage() {
       // Carregar disciplinas do professor
       const { data: discData, error: discError } = await supabase
         .from('syllab_disciplinas')
-        .select('id, nome, codigo, carga_horaria, descricao')
+        .select('id, nome, codigo, carga_horaria, descricao, publica, codigo_acesso')
         .eq('professor_id', professorId)
         .eq('instituicao_id', instituicaoId)
         .eq('ativo', true)
@@ -139,10 +141,23 @@ export default function SelecionarDisciplinaPage() {
                     
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h3 className="text-xl font-bold text-gray-900 mb-1">
-                            {disc.nome}
-                          </h3>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-xl font-bold text-gray-900">
+                              {disc.nome}
+                            </h3>
+                            {disc.publica ? (
+                              <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded flex items-center">
+                                <Globe className="w-3 h-3 mr-1" />
+                                Pública
+                              </span>
+                            ) : (
+                              <span className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded flex items-center">
+                                <Lock className="w-3 h-3 mr-1" />
+                                Privada
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-600">
                             Código: {disc.codigo}
                           </p>
